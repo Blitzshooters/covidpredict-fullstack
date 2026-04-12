@@ -6,9 +6,9 @@ http://localhost:8000/api/v1
 
 ---
 
-# 📦 Standard Response Format
+# Standard Response Format
 
-## ✅ Success
+## Success
 
 {
 "status": "success",
@@ -17,7 +17,7 @@ http://localhost:8000/api/v1
 "timestamp": "2026-04-13T21:00:00Z"
 }
 
-## ❌ Error
+## Error
 
 {
 "status": "error",
@@ -28,9 +28,9 @@ http://localhost:8000/api/v1
 
 ---
 
-# 📊 Data Structure
+# Data Structure
 
-## 📌 Covid Data
+## Covid Data
 
 {
 "id": "integer",
