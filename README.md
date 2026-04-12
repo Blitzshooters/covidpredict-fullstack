@@ -12,7 +12,7 @@ Aplikasi prediksi perkembangan COVID-19 berbasis Android menggunakan metode Sing
 
 * Backend: Laravel
 * Frontend: Kotlin (Android)
-* Database: MySQL / PostgreSQL
+* Database: MySQL
 
 ## Fitur
 
