@@ -1,6 +1,6 @@
 # System Architecture - CovidPredict
 
-## 🧭 Overview
+## Overview
 
 CovidPredict menggunakan arsitektur **Client-Server** berbasis REST API, di mana aplikasi Android berkomunikasi dengan backend Laravel untuk mengambil data dan melakukan prediksi.
 
