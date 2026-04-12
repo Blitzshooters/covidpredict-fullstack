@@ -1,0 +1,50 @@
+# =========================
+# ENV & SECRET
+# =========================
+.env
+.env.*
+*.key
+
+# =========================
+# DEPENDENCIES
+# =========================
+/backend/laravel-app/vendor/
+/backend/laravel-app/node_modules/
+/frontend/android-app/node_modules/
+
+# =========================
+# LARAVEL
+# =========================
+/backend/laravel-app/storage/*.key
+/backend/laravel-app/storage/logs/*
+/backend/laravel-app/storage/framework/cache/*
+/backend/laravel-app/storage/framework/sessions/*
+/backend/laravel-app/storage/framework/views/*
+/backend/laravel-app/bootstrap/cache/*
+
+# =========================
+# ANDROID
+# =========================
+/frontend/android-app/.gradle/
+/frontend/android-app/build/
+/frontend/android-app/app/build/
+/frontend/android-app/local.properties
+/frontend/android-app/.idea/
+/frontend/android-app/*.iml
+
+# =========================
+# SYSTEM FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# LOGS & DEBUG
+# =========================
+*.log
+
+# =========================
+# EDITOR / IDE
+# =========================
+.vscode/
+.idea/
