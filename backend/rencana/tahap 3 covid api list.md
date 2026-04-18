@@ -24,5 +24,5 @@ Implementasi dapat diuji dengan langkah berikut:
 
 ## Langkah Selanjutnya
 
-- **Tahap 3 (Lanjutan)**: Membuat endpoint detail `GET /api/v1/covid/{id}` pada branch `feature/backend-covid-detail`.
+- **Tahap 3 (Lanjutan)**: Membuat endpoint detail `GET /api/v1/covid/{id}` pada branch `feature/backend-covid-detail`. (belum buat).
 - **Tahap 4**: Pembuatan logic Prediction Service menggunakan algoritma Single Exponential Smoothing (SES).
