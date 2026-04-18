@@ -5,7 +5,7 @@ Dokumen ini merinci langkah-langkah untuk membangun backend Laravel sesuai dokum
 ## User Review Required
 
 > [!IMPORTANT]
-> Mohon di-review apakah urutan pengerjaan fitur di bawah ini sudah sesuai dengan prioritas tim. Pendekatan ini memastikan dasar project kuat sebelum kita membuat logika SES yang cukup kompleks.
+> Mohon di-review apakah urutan pengerjaan apakah sudah benar?
 
 ## Proposed Changes
 

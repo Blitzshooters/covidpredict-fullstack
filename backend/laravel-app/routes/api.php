@@ -21,3 +21,5 @@ Route::get('/health-check', function () {
         'timestamp' => now()->toIso8601String()
     ]);
 });
+
+Route::get('/covid', [\App\Http\Controllers\CovidController::class, 'index']);
