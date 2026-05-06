@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Models\CovidData;
 use Illuminate\Support\Collection;
-
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 class CovidService
 {
     /**
@@ -43,5 +43,19 @@ class CovidService
     public function getById(int $id): ?CovidData
     {
         return CovidData::find($id);
+    }
+
+    /**
+     * Get paginated COVID data filtered by province.
+     *
+     * @param string $province
+     * @param int $perPage
+     * @return LengthAwarePaginator
+     */
+    public function getByProvincePaginated(string $province, int $perPage = 15): LengthAwarePaginator
+    {
+        return CovidData::where('wilayah', 'like', "%{$province}%")
+            ->orderBy('tanggal', 'desc')
+            ->paginate($perPage);
     }
 }
