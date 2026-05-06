@@ -44,4 +44,50 @@ class CovidService
     {
         return CovidData::find($id);
     }
+
+    /**
+     * Get summary data for the dashboard.
+     *
+     * @param string|null $wilayah
+     * @return array
+     */
+    public function getSummary(?string $wilayah = 'Indonesia'): array
+    {
+        $latest = CovidData::where('wilayah', $wilayah)
+            ->orderBy('tanggal', 'desc')
+            ->first();
+
+        if (!$latest) {
+            return [
+                'total_positive' => 0,
+                'total_recovered' => 0,
+                'total_deaths' => 0,
+                'latest_data' => null
+            ];
+        }
+
+        return [
+            'total_positive' => $latest->positif,
+            'total_recovered' => $latest->sembuh,
+            'total_deaths' => $latest->meninggal,
+            'latest_data' => $latest
+        ];
+    }
+
+    /**
+     * Get chart data (e.g., last 30 days).
+     *
+     * @param int $days
+     * @param string|null $wilayah
+     * @return Collection
+     */
+    public function getChartData(int $days = 30, ?string $wilayah = 'Indonesia'): Collection
+    {
+        return CovidData::where('wilayah', $wilayah)
+            ->orderBy('tanggal', 'desc')
+            ->limit($days)
+            ->get()
+            ->reverse()
+            ->values();
+    }
 }
