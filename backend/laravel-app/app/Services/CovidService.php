@@ -48,11 +48,12 @@ class CovidService
     /**
      * Get summary data for the dashboard.
      *
+     * @param string|null $wilayah
      * @return array
      */
-    public function getSummary(): array
+    public function getSummary(?string $wilayah = 'Indonesia'): array
     {
-        $latest = CovidData::where('wilayah', 'Indonesia')
+        $latest = CovidData::where('wilayah', $wilayah)
             ->orderBy('tanggal', 'desc')
             ->first();
 
@@ -77,11 +78,12 @@ class CovidService
      * Get chart data (e.g., last 30 days).
      *
      * @param int $days
+     * @param string|null $wilayah
      * @return Collection
      */
-    public function getChartData(int $days = 30): Collection
+    public function getChartData(int $days = 30, ?string $wilayah = 'Indonesia'): Collection
     {
-        return CovidData::where('wilayah', 'Indonesia')
+        return CovidData::where('wilayah', $wilayah)
             ->orderBy('tanggal', 'desc')
             ->limit($days)
             ->get()

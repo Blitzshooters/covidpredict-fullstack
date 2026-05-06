@@ -19,9 +19,10 @@ class DashboardController extends Controller
     /**
      * Get dashboard summary.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $summary = $this->covidService->getSummary();
+        $wilayah = $request->query('wilayah', 'Indonesia');
+        $summary = $this->covidService->getSummary($wilayah);
 
         return response()->json([
             'status' => 'success',
@@ -37,7 +38,8 @@ class DashboardController extends Controller
     public function chart(Request $request): JsonResponse
     {
         $days = $request->query('days', 30);
-        $data = $this->covidService->getChartData((int) $days);
+        $wilayah = $request->query('wilayah', 'Indonesia');
+        $data = $this->covidService->getChartData((int) $days, $wilayah);
 
         return response()->json([
             'status' => 'success',
