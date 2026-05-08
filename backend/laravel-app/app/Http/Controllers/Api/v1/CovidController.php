@@ -79,4 +79,26 @@ class CovidController extends Controller
             'timestamp' => now()->toIso8601String(),
         ]);
     }
+
+    /**
+     * Get paginated COVID data filtered by province.
+     */
+    public function byProvince(Request $request, string $province): JsonResponse
+    {
+        $perPage = $request->query('per_page', 15);
+        $paginator = $this->covidService->getByProvincePaginated($province, $perPage);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Data provinsi berhasil diambil',
+            'data' => $paginator->items(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
+            'timestamp' => now()->toIso8601String(),
+        ]);
+    }
 }

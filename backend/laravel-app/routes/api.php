@@ -13,6 +13,7 @@ Route::get('/user', function (Request $request) {
 Route::prefix('v1')->group(function () {
     Route::get('/covid', [CovidController::class, 'index']);
     Route::get('/covid/latest', [CovidController::class, 'latest']);
+    Route::get('/covid/province/{province}', [CovidController::class, 'byProvince']);
     Route::get('/covid/{id}', [CovidController::class, 'show']);
 
     // Dashboard & Chart
