@@ -19,4 +19,8 @@ Route::prefix('v1')->group(function () {
     // Dashboard & Chart
     Route::get('/dashboard', [DashboardController::class, 'index']);
     Route::get('/chart', [DashboardController::class, 'chart']);
+
+    // Prediction
+    Route::post('/predict', [\App\Http\Controllers\Api\v1\PredictionController::class, 'predict']);
+    Route::get('/predict/history', [\App\Http\Controllers\Api\v1\PredictionController::class, 'history']);
 });
