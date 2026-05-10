@@ -59,18 +59,68 @@ class CovidService
 
         if (!$latest) {
             return [
-                'total_positive' => 0,
-                'total_recovered' => 0,
-                'total_deaths' => 0,
-                'latest_data' => null
+                'last_updated' => '-',
+                'confirmed' => 0,
+                'today_increase' => 0,
+                'recovered' => 0,
+                'recovered_rate' => 0.0,
+                'deaths' => 0,
+                'death_rate' => 0.0,
+                'trend_percent' => 0.0,
+                'trend_status' => 'stable',
+                'model_confidence' => 0.0
             ];
         }
 
+        // Ambil data hari sebelumnya untuk kalkulasi kenaikan harian
+        $previous = CovidData::where('wilayah', $wilayah)
+            ->where('tanggal', '<', $latest->tanggal)
+            ->orderBy('tanggal', 'desc')
+            ->first();
+
+        $todayIncrease = $previous ? ($latest->positif - $previous->positif) : 0;
+        
+        $recoveredRate = $latest->positif > 0 
+            ? round(($latest->sembuh / $latest->positif) * 100, 1) 
+            : 0.0;
+            
+        $deathRate = $latest->positif > 0 
+            ? round(($latest->meninggal / $latest->positif) * 100, 1) 
+            : 0.0;
+
+        // Logika tren sederhana berdasarkan kenaikan kasus harian
+        $trendStatus = 'stable';
+        $trendPercent = 0.0;
+        if ($previous) {
+            $prevPrevious = CovidData::where('wilayah', $wilayah)
+                ->where('tanggal', '<', $previous->tanggal)
+                ->orderBy('tanggal', 'desc')
+                ->first();
+            
+            $prevIncrease = $prevPrevious ? ($previous->positif - $prevPrevious->positif) : 0;
+            
+            if ($todayIncrease > $prevIncrease) {
+                $trendStatus = 'up';
+            } elseif ($todayIncrease < $prevIncrease) {
+                $trendStatus = 'down';
+            }
+            
+            if ($prevIncrease > 0) {
+                $trendPercent = round((($todayIncrease - $prevIncrease) / $prevIncrease) * 100, 1);
+            }
+        }
+
         return [
-            'total_positive' => $latest->positif,
-            'total_recovered' => $latest->sembuh,
-            'total_deaths' => $latest->meninggal,
-            'latest_data' => $latest
+            'last_updated' => $latest->tanggal->format('d M Y, h:i A'),
+            'confirmed' => $latest->positif,
+            'today_increase' => $todayIncrease,
+            'recovered' => $latest->sembuh,
+            'recovered_rate' => $recoveredRate,
+            'deaths' => $latest->meninggal,
+            'death_rate' => $deathRate,
+            'trend_percent' => abs($trendPercent),
+            'trend_status' => $trendStatus,
+            'model_confidence' => 85.5 // Placeholder until AI model integrated
         ];
     }
 
