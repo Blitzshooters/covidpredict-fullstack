@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\v1;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class PredictionController extends Controller
 {
@@ -49,7 +50,9 @@ class PredictionController extends Controller
 
     public function history()
     {
-        $history = \App\Models\Prediction::orderBy('tanggal_prediksi', 'desc')->get();
+        $history = Cache::remember('prediction_history', 3600, function () {
+            return \App\Models\Prediction::orderBy('tanggal_prediksi', 'desc')->get();
+        });
         
         return response()->json([
             'status' => 'success',
