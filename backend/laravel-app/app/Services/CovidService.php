@@ -53,11 +53,13 @@ class CovidService
      */
     public function getSummary(?string $wilayah = 'Indonesia'): array
     {
-        $latest = CovidData::where('wilayah', $wilayah)
+        // Optimization: Fetch top 3 records in one query instead of 3 separate queries
+        $records = CovidData::where('wilayah', $wilayah)
             ->orderBy('tanggal', 'desc')
-            ->first();
+            ->limit(3)
+            ->get();
 
-        if (!$latest) {
+        if ($records->isEmpty()) {
             return [
                 'last_updated' => '-',
                 'confirmed' => 0,
@@ -72,11 +74,9 @@ class CovidService
             ];
         }
 
-        // Ambil data hari sebelumnya untuk kalkulasi kenaikan harian
-        $previous = CovidData::where('wilayah', $wilayah)
-            ->where('tanggal', '<', $latest->tanggal)
-            ->orderBy('tanggal', 'desc')
-            ->first();
+        $latest = $records->first();
+        $previous = $records->get(1);
+        $prevPrevious = $records->get(2);
 
         $todayIncrease = $previous ? ($latest->positif - $previous->positif) : 0;
         
@@ -91,12 +91,8 @@ class CovidService
         // Logika tren sederhana berdasarkan kenaikan kasus harian
         $trendStatus = 'stable';
         $trendPercent = 0.0;
+        
         if ($previous) {
-            $prevPrevious = CovidData::where('wilayah', $wilayah)
-                ->where('tanggal', '<', $previous->tanggal)
-                ->orderBy('tanggal', 'desc')
-                ->first();
-            
             $prevIncrease = $prevPrevious ? ($previous->positif - $prevPrevious->positif) : 0;
             
             if ($todayIncrease > $prevIncrease) {

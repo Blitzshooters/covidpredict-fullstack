@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\CovidService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class CovidController extends Controller
 {
@@ -22,7 +23,11 @@ class CovidController extends Controller
     public function index(Request $request): JsonResponse
     {
         $wilayah = $request->query('wilayah');
-        $data = $this->covidService->getAll($wilayah);
+        $cacheKey = 'covid_index_' . ($wilayah ?? 'all');
+
+        $data = Cache::remember($cacheKey, 3600, function () use ($wilayah) {
+            return $this->covidService->getAll($wilayah);
+        });
 
         return response()->json([
             'status' => 'success',
@@ -37,7 +42,11 @@ class CovidController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        $data = $this->covidService->getById($id);
+        $cacheKey = 'covid_detail_' . $id;
+
+        $data = Cache::remember($cacheKey, 3600, function () use ($id) {
+            return $this->covidService->getById($id);
+        });
 
         if (!$data) {
             return response()->json([
@@ -61,7 +70,9 @@ class CovidController extends Controller
      */
     public function latest(): JsonResponse
     {
-        $data = $this->covidService->getLatest();
+        $data = Cache::remember('covid_latest', 3600, function () {
+            return $this->covidService->getLatest();
+        });
 
         if (!$data) {
             return response()->json([
@@ -86,7 +97,12 @@ class CovidController extends Controller
     public function byProvince(Request $request, string $province): JsonResponse
     {
         $perPage = $request->query('per_page', 15);
-        $paginator = $this->covidService->getByProvincePaginated($province, $perPage);
+        $page = $request->query('page', 1);
+        $cacheKey = "covid_province_{$province}_{$perPage}_page_{$page}";
+
+        $paginator = Cache::remember($cacheKey, 3600, function () use ($province, $perPage) {
+            return $this->covidService->getByProvincePaginated($province, $perPage);
+        });
 
         return response()->json([
             'status' => 'success',
