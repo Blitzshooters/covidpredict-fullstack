@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\CovidService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
@@ -22,7 +23,11 @@ class DashboardController extends Controller
     public function index(Request $request): JsonResponse
     {
         $wilayah = $request->query('wilayah', 'Indonesia');
-        $summary = $this->covidService->getSummary($wilayah);
+        $cacheKey = 'dashboard_summary_' . $wilayah;
+
+        $summary = Cache::remember($cacheKey, 3600, function () use ($wilayah) {
+            return $this->covidService->getSummary($wilayah);
+        });
 
         return response()->json([
             'status' => 'success',
@@ -39,7 +44,11 @@ class DashboardController extends Controller
     {
         $days = $request->query('days', 30);
         $wilayah = $request->query('wilayah', 'Indonesia');
-        $data = $this->covidService->getChartData((int) $days, $wilayah);
+        $cacheKey = "dashboard_chart_{$wilayah}_{$days}";
+
+        $data = Cache::remember($cacheKey, 3600, function () use ($days, $wilayah) {
+            return $this->covidService->getChartData((int) $days, $wilayah);
+        });
 
         return response()->json([
             'status' => 'success',
