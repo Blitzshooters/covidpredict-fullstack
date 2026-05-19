@@ -120,7 +120,7 @@ class CovidService
 
         return [
             'wilayah' => $wilayah,
-            'last_updated' => $latest->tanggal->translatedFormat('d M Y, h:i A'),
+            'last_updated' => Carbon::parse($latest->tanggal)->translatedFormat('d M Y, h:i A'),
             'confirmed' => $latest->positif,
             'today_increase' => $todayIncrease,
             'recovered' => $latest->sembuh,
