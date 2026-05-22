@@ -1,619 +1,766 @@
 package com.app.covidpredict.ui.screen
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.app.covidpredict.R
 import com.app.covidpredict.theme.CovidPredictTheme
 import com.app.covidpredict.viewmodels.DashboardViewModel
 import com.app.covidpredict.viewmodels.SharedViewModel
+import kotlinx.coroutines.delay
+import java.text.NumberFormat
+import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
     sharedViewModel: SharedViewModel,
-    onNavigateToPrediction: () -> Unit,
-    onNavigateToData: () -> Unit
+    onNavigateToPrediction: () -> Unit = {},
+    onNavigateToData: () -> Unit = {}
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val selectedLocation by sharedViewModel.selectedLocation.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF1F9FF))
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
-    ) {
-        Spacer(modifier = Modifier.height(24.dp))
+    // Re-fetch data when location changes
+    LaunchedEffect(selectedLocation) {
+        viewModel.fetchDashboardData(sharedViewModel.getApiLocation())
+    }
 
-        LocationRow(
-            lokasi = state.lokasi,
-            lastUpdated = state.lastUpdated
-        )
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+        }
+    }
 
-        Spacer(modifier = Modifier.height(28.dp))
+    val pullToRefreshState = rememberPullToRefreshState()
+    if (pullToRefreshState.isRefreshing) {
+        LaunchedEffect(true) {
+            viewModel.refreshData(sharedViewModel.getApiLocation())
+        }
+    }
 
-        ConfirmedCard(
-            confirmed = state.confirmed,
-            todayIncrease = state.todayIncrease
-        )
+    LaunchedEffect(uiState.isRefreshing) {
+        if (!uiState.isRefreshing) {
+            pullToRefreshState.endRefresh()
+        }
+    }
 
-        Spacer(modifier = Modifier.height(16.dp))
+    // Staggered Animation State
+    var visibleItems by remember { mutableIntStateOf(0) }
+    LaunchedEffect(uiState.isLoading) {
+        if (!uiState.isLoading) {
+            for (i in 1..7) {
+                visibleItems = i
+                delay(100)
+            }
+        }
+    }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            SmallStatCard(
-                title = "Sembuh",
-                value = state.recovered,
-                badgeText = state.recoveredRate,
-                badgeColor = Color(0xFFB8F5BE),
-                valueColor = Color(0xFF067A22),
-                modifier = Modifier.weight(1f)
-            )
-
-            SmallStatCard(
-                title = "Meninggal",
-                value = state.deaths,
-                badgeText = state.deathRate,
-                badgeColor = Color(0xFFCBEAFA),
-                valueColor = Color(0xFF2F3545),
-                modifier = Modifier.weight(1f)
-            )
+    Box(modifier = Modifier.nestedScroll(pullToRefreshState.nestedScrollConnection)) {
+        if (uiState.isLoading && !uiState.isRefreshing) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color(0xFF005EA4))
+            }
         }
 
-        Spacer(modifier = Modifier.height(42.dp))
-
-        SectionTitle(
-            title = "Pintasan Sistem",
-            actionText = "Lihat model lengkap",
-            onActionClick = onNavigateToPrediction
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        SystemInsightCard(
-            trendPercent = state.trendPercent,
-            trendStatus = state.trendStatus,
-            modelConfidence = state.modelConfidence,
-            onClick = onNavigateToPrediction
-        )
-
-        Spacer(modifier = Modifier.height(40.dp))
-
-        Text(
-            text = "Prediksi Aktif",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black
-        )
-
-        Spacer(modifier = Modifier.height(18.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF3F8FF)),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            PredictionMenuCard(
-                title = "Data Historis",
-                description = "Akses arsip lengkap wabah masa lalu dan statistik regional.",
-                iconRes = R.drawable.data,
-                backgroundColor = Color(0xFF086CB2),
-                iconBackground = Color(0xFF3897D8),
-                contentColor = Color.White,
-                modifier = Modifier.weight(1f),
-                onClick = onNavigateToData
-            )
+            item {
+                AnimatedVisibility(
+                    visible = visibleItems >= 1,
+                    enter = fadeIn() + slideInVertically { it / 2 }
+                ) {
+                    LocationRow(
+                        lastUpdated = uiState.lastUpdated,
+                        selectedLocation = selectedLocation,
+                        locations = sharedViewModel.locations,
+                        onLocationChange = { sharedViewModel.updateLocation(it) }
+                    )
+                }
+            }
 
-            PredictionMenuCard(
-                title = "Analisis Lab",
-                description = "Jelajahi kumpulan data dasar yang digunakan untuk prediksi.",
-                iconRes = R.drawable.lab,
-                backgroundColor = Color(0xFFC7E8F7),
-                iconBackground = Color(0xFF8DD0F2),
-                contentColor = Color(0xFF1A1F2B),
-                modifier = Modifier.weight(1f),
-                onClick = onNavigateToPrediction
-            )
+            item {
+                AnimatedVisibility(
+                    visible = visibleItems >= 2,
+                    enter = fadeIn() + slideInVertically { it / 2 }
+                ) {
+                    ConfirmedCard(
+                        confirmed = uiState.confirmed,
+                        todayIncrease = uiState.todayIncrease,
+                        rawTodayIncrease = uiState.rawTodayIncrease,
+                        isNasional = selectedLocation == "Nasional"
+                    )
+                }
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = visibleItems >= 3,
+                    enter = fadeIn() + slideInVertically { it / 2 }
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        SmallStatCard(
+                            title = "Sembuh",
+                            value = uiState.recovered,
+                            percentage = uiState.recoveredRate,
+                            chipColor = Color(0xFFD7F2DE),
+                            textColor = Color(0xFF126D27),
+                            valueColor = Color(0xFF126D27),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        SmallStatCard(
+                            title = "Meninggal",
+                            value = uiState.deaths,
+                            percentage = uiState.deathRate,
+                            chipColor = Color(0xFFDCE5EC),
+                            textColor = Color(0xFF005EA4),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = visibleItems >= 4,
+                    enter = fadeIn() + slideInVertically { it / 2 }
+                ) {
+                    ShortcutSection(
+                        trend = uiState.trendPercent,
+                        trendStatus = uiState.trendStatus,
+                        confidence = uiState.modelConfidence,
+                        onNavigateToPrediction = onNavigateToPrediction
+                    )
+                }
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = visibleItems >= 5,
+                    enter = fadeIn() + slideInVertically { it / 2 }
+                ) {
+                    PredictionSection(
+                        onNavigateToData = onNavigateToData,
+                        onNavigateToPrediction = onNavigateToPrediction
+                    )
+                }
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = visibleItems >= 6,
+                    enter = fadeIn() + slideInVertically { it / 2 }
+                ) {
+                    ArticleCard()
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
 
-        Spacer(modifier = Modifier.height(42.dp))
+        PullToRefreshContainer(
+            state = pullToRefreshState,
+            modifier = Modifier.align(Alignment.TopCenter),
+            containerColor = Color.White,
+            contentColor = Color(0xFF005EA4)
+        )
 
-        ArticleCard()
-
-        Spacer(modifier = Modifier.height(32.dp))
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 }
 
 @Composable
-private fun LocationRow(
-    lokasi: String,
-    lastUpdated: String
+fun AnimatedNumber(
+    value: String,
+    prefix: String = "",
+    suffix: String = "",
+    style: TextStyle,
+    color: Color
 ) {
+    // Hilangkan karakter non-digit kecuali tanda plus/minus di depan
+    val numericString = value.filter { it.isDigit() }
+    val targetValue = numericString.toLongOrNull() ?: 0L
+
+    val animatedValue = remember { Animatable(0f) }
+
+    LaunchedEffect(value) {
+        animatedValue.animateTo(
+            targetValue.toFloat(),
+            animationSpec = tween(durationMillis = 1200)
+        )
+    }
+
+    val formattedValue = NumberFormat.getInstance(Locale("id", "ID")).format(animatedValue.value.toLong())
+
+    Text(
+        text = "$prefix$formattedValue$suffix",
+        style = style,
+        color = color,
+        fontWeight = FontWeight.ExtraBold
+    )
+}
+
+@Composable
+fun LocationRow(
+    lastUpdated: String,
+    selectedLocation: String,
+    locations: List<String>,
+    onLocationChange: (String) -> Unit = {}
+) {
+    var expanded by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Surface(
-            shape = RoundedCornerShape(14.dp),
-            color = Color(0xFFE0F3FF)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
+        Box {
+            Surface(
+                shape = CircleShape,
+                color = Color(0xFFCBE6F7),
+                modifier = Modifier.clickable { expanded = true }
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.map),
-                    contentDescription = null,
-                    tint = Color(0xFF006BB8),
-                    modifier = Modifier.size(18.dp)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.map),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color(0xFF005EA4)
+                    )
 
-                Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
-                Text(
-                    text = lokasi,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.Black
-                )
+                    Text(
+                        text = selectedLocation,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color(0xFF005EA4),
+                        fontWeight = FontWeight.Bold
+                    )
 
-                Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
-                Icon(
-                    painter = painterResource(id = R.drawable.dropdown),
-                    contentDescription = null,
-                    tint = Color.Black,
-                    modifier = Modifier.size(14.dp)
-                )
+                    Icon(
+                        painter = painterResource(id = R.drawable.dropdown),
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = Color(0xFF005EA4)
+                    )
+                }
+            }
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                locations.forEach { location ->
+                    DropdownMenuItem(
+                        text = { Text(location) },
+                        onClick = {
+                            expanded = false
+                            onLocationChange(location)
+                        }
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(12.dp))
 
         Box(
             modifier = Modifier
-                .size(7.dp)
-                .background(Color(0xFF16863D), CircleShape)
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF126D27))
         )
 
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(6.dp))
 
         Text(
             text = "Terakhir diperbarui: $lastUpdated",
-            fontSize = 11.sp,
-            color = Color(0xFF273142),
-            lineHeight = 15.sp,
-            maxLines = 2,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.Gray,
+            lineHeight = 14.sp,
             modifier = Modifier.weight(1f)
         )
     }
 }
 
 @Composable
-private fun ConfirmedCard(
+fun ConfirmedCard(
     confirmed: String,
-    todayIncrease: String
+    todayIncrease: String,
+    rawTodayIncrease: Int,
+    isNasional: Boolean
 ) {
+    val threshold = if (isNasional) 1000 else 300
+    val showWarning = rawTodayIncrease > threshold
+
+    // Pulsing animation for warning icon
+    val infiniteTransition = rememberInfiniteTransition(label = "pulsing")
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(148.dp),
-        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Column(
+        Box (modifier = Modifier.fillMaxWidth()) {
+            // Warning Icon with Pulsing Effect
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showWarning,
+                enter = fadeIn() + expandIn(expandFrom = Alignment.Center),
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 24.dp, top = 26.dp, bottom = 22.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
             ) {
-                Column {
-                    Text(
-                        text = "Kasus Terkonfirmasi",
-                        fontSize = 15.sp,
-                        color = Color(0xFF141927)
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = confirmed,
-                        fontSize = 36.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFC52C30),
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.trending_up),
-                        contentDescription = null,
-                        tint = Color(0xFFC52C30),
-                        modifier = Modifier.size(15.dp)
-                    )
-
-                    Spacer(modifier = Modifier.width(5.dp))
-
-                    Text(
-                        text = todayIncrease,
-                        fontSize = 13.sp,
-                        color = Color(0xFFC52C30)
-                    )
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .width(68.dp)
-                    .fillMaxHeight()
-                    .background(Color(0xFFFFF0F0)),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFFFDECEC),
                     modifier = Modifier
-                        .size(42.dp)
-                        .rotate(45f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFE9C8C8)),
-                    contentAlignment = Alignment.Center
+                        .size(32.dp)
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                        }
                 ) {
-                    Text(
-                        text = "!",
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.rotate(-45f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SmallStatCard(
-    title: String,
-    value: String,
-    badgeText: String,
-    badgeColor: Color,
-    valueColor: Color,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.height(132.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = title,
-                fontSize = 15.sp,
-                color = Color(0xFF111827),
-                maxLines = 1
-            )
-
-            Text(
-                text = value,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = valueColor,
-                maxLines = 1,
-                softWrap = false
-            )
-
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = badgeColor
-            ) {
-                Text(
-                    text = badgeText,
-                    fontSize = 10.sp,
-                    color = Color(0xFF0B5F2A),
-                    maxLines = 1,
-                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SectionTitle(
-    title: String,
-    actionText: String,
-    onActionClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = title,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black
-        )
-
-        Text(
-            text = actionText,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color(0xFF005BBE),
-            modifier = Modifier.clickable { onActionClick() }
-        )
-    }
-}
-
-@Composable
-private fun SystemInsightCard(
-    trendPercent: String,
-    trendStatus: String,
-    modelConfidence: String,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(216.dp)
-            .clickable { onClick() },
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F4FF))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 26.dp, top = 26.dp, end = 26.dp, bottom = 24.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = "Tren Kemungkinan (7 Hari Ke\nDepan)",
-                    fontSize = 16.sp,
-                    color = Color.Black,
-                    lineHeight = 22.sp
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.prediksi),
-                        contentDescription = null,
-                        tint = Color(0xFF08752B),
-                        modifier = Modifier.size(38.dp)
-                    )
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Column {
+                    Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = trendPercent,
-                            fontSize = 21.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF08752B),
-                            maxLines = 1
-                        )
-
-                        Text(
-                            text = trendStatus,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF08752B),
-                            maxLines = 1
+                            "!",
+                            color = Color(0xFFB02528),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black
                         )
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
+            Column(modifier = Modifier.padding(24.dp)) {
                 Text(
-                    text = "Kepercayaan model: $modelConfidence\nberdasarkan data vaksinasi\ndan mobilitas terbaru.",
-                    fontSize = 12.sp,
-                    color = Color(0xFF3A4656),
-                    lineHeight = 16.sp,
-                    modifier = Modifier.padding(start = 52.dp)
+                    "Kasus Terkonfirmasi",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.Gray,
+                    fontWeight = FontWeight.Bold
                 )
-            }
+                Spacer(modifier = Modifier.height(12.dp))
 
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Box(
-                modifier = Modifier
-                    .size(width = 68.dp, height = 68.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.arrow_right),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = Color(0xFF005EA4)
+                AnimatedNumber(
+                    value = confirmed,
+                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 38.sp),
+                    color = Color(0xFFB02528)
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PredictionMenuCard(
-    title: String,
-    description: String,
-    iconRes: Int,
-    backgroundColor: Color,
-    iconBackground: Color,
-    contentColor: Color,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = modifier
-            .height(174.dp)
-            .clickable { onClick() },
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 22.dp, vertical = 22.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(iconBackground),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(id = iconRes),
-                    contentDescription = title,
-                    tint = contentColor,
-                    modifier = Modifier.size(27.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            Text(
-                text = title,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = contentColor,
-                maxLines = 1
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = description,
-                fontSize = 11.sp,
-                color = contentColor.copy(alpha = 0.85f),
-                lineHeight = 15.sp,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun ArticleCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(R.drawable.artikel1)
-                    .size(900, 500)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(172.dp)
-                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)),
-                contentScale = ContentScale.Crop
-            )
-
-            Column(
-                modifier = Modifier.padding(horizontal = 26.dp, vertical = 22.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        color = Color(0xFFEAF7ED),
-                        shape = RoundedCornerShape(2.dp)
-                    ) {
-                        Text(
-                            text = "KESEHATAN PUBLIK",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF136C28),
-                            letterSpacing = 1.sp,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Text(
-                        text = "5 menit baca",
-                        fontSize = 11.sp,
-                        color = Color(0xFF4B5563)
-                    )
-                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                val trendColor = if (rawTodayIncrease >= 0) Color(0xFFE53935) else Color(0xFF43A047)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painter = painterResource(
+                            id = if (rawTodayIncrease >= 0) R.drawable.trending_up else R.drawable.trending_down
+                        ),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = trendColor
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    AnimatedNumber(
+                        value = todayIncrease,
+                        prefix = if (rawTodayIncrease >= 0) "+" else "",
+                        suffix = " Hari Ini",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = trendColor
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SmallStatCard(
+    title: String,
+    value: String,
+    percentage: String,
+    chipColor: Color,
+    textColor: Color,
+    valueColor: Color = Color(0xFF191A1C),
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.Gray,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            AnimatedNumber(
+                value = value,
+                style = MaterialTheme.typography.titleLarge,
+                color = valueColor
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = chipColor
+            ) {
+                Text(
+                    text = percentage,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = textColor,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ShortcutSection(
+    trend: String,
+    trendStatus: String,
+    confidence: String,
+    onNavigateToPrediction: () -> Unit = {}
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Pintasan Sistem",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF021F29)
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = "Lihat model lengkap",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color(0xFF005EA4),
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { onNavigateToPrediction() }
+            )
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        TrendCard(trend, trendStatus, confidence, onNavigateToPrediction)
+    }
+}
+
+@Composable
+fun TrendCard(
+    trend: String,
+    status: String,
+    confidence: String,
+    onNavigateToPrediction: () -> Unit = {}
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        label = "scale"
+    )
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onNavigateToPrediction
+            ),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFCBE6F7)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Tren Kemungkinan (7 Hari Ke Depan)",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color(0xFF021F29),
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.prediksi),
+                        contentDescription = null,
+                        modifier = Modifier.size(44.dp),
+                        tint = Color(0xFF126D27)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = trend,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color(0xFF126D27),
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 22.sp
+                        )
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color(0xFF126D27),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = confidence,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray,
+                    lineHeight = 14.sp
+                )
+            }
+            Surface(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clickable { onNavigateToPrediction() },
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.arrow_right),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color(0xFF005EA4)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PredictionSection(
+    onNavigateToData: () -> Unit = {},
+    onNavigateToPrediction: () -> Unit = {}
+) {
+    Column {
+        Text(
+            "Prediksi Aktif",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF021F29)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            PredictionCard(
+                title = "Data Historis",
+                desc = "Akses arsip lengkap wabah masa lalu dan statistik regional.",
+                iconRes = R.drawable.data,
+                containerColor = Color(0xFF005EA4),
+                contentColor = Color.White,
+                iconBgColor = Color.White.copy(alpha = 0.2f),
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToData
+            )
+            PredictionCard(
+                title = "Analisis Lab",
+                desc = "Jelajahi kumpulan data dasar yang digunakan untuk prediksi.",
+                iconRes = R.drawable.lab,
+                containerColor = Color(0xFFCDE8F9),
+                contentColor = Color(0xFF021F29),
+                iconBgColor = Color(0xFF8BCEF7).copy(alpha = 0.5f),
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToPrediction
+            )
+        }
+    }
+}
+
+@Composable
+fun PredictionCard(
+    title: String,
+    desc: String,
+    iconRes: Int,
+    containerColor: Color,
+    contentColor: Color,
+    iconBgColor: Color,
+    modifier: Modifier,
+    onClick: () -> Unit = {}
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        label = "scale"
+    )
+
+    Card(
+        modifier = modifier
+            .height(200.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null, // Matikan ripple default agar micro-interaction terasa lebih halus
+                onClick = onClick
+            ),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Surface(
+                modifier = Modifier.size(44.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = iconBgColor
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(id = iconRes),
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = if (contentColor == Color.White) Color.White else Color(0xFF005EA4)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = contentColor,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = desc,
+                style = MaterialTheme.typography.labelSmall,
+                color = contentColor.copy(alpha = 0.7f),
+                lineHeight = 14.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun ArticleCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column {
+            AsyncImage(
+                model = R.drawable.artikel1,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp),
+                contentScale = ContentScale.Crop
+            )
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = Color(0xFFD7F2DE),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "KESEHATAN PUBLIK",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF126D27),
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "5 menit baca",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Gray
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "Memahami Dampak Pergeseran Musiman terhadap Penyebaran Virus",
-                    fontSize = 18.sp,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color.Black,
-                    lineHeight = 24.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    color = Color(0xFF021F29)
                 )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Studi terbaru menunjukkan bahwa faktor lingkungan terus memainkan peran halus namun...",
-                    fontSize = 13.sp,
-                    color = Color(0xFF4B5563),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.Gray,
                     lineHeight = 18.sp
                 )
             }
@@ -627,9 +774,7 @@ fun DashboardScreenPreview() {
     CovidPredictTheme {
         DashboardScreen(
             viewModel = DashboardViewModel(),
-            sharedViewModel = SharedViewModel(),
-            onNavigateToPrediction = {},
-            onNavigateToData = {}
+            sharedViewModel = SharedViewModel()
         )
     }
 }
