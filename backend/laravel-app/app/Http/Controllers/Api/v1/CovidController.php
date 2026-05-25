@@ -22,12 +22,17 @@ class CovidController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $wilayah = $request->query('wilayah');
-        $cacheKey = 'covid_index_' . ($wilayah ?? 'all');
+        $wilayah = $request->query('wilayah', 'Indonesia');
+        $days = (int) $request->query('days', 30);
+        $startDate = $request->query('start_date');
+        $endDate = $request->query('end_date');
 
-        $data = Cache::remember($cacheKey, 3600, function () use ($wilayah) {
-            return $this->covidService->getAll($wilayah);
-        });
+        $data = $this->covidService->getHistory(
+            wilayah: $wilayah,
+            days: $days,
+            startDate: $startDate,
+            endDate: $endDate
+        );
 
         return response()->json([
             'status' => 'success',
