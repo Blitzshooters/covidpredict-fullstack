@@ -155,4 +155,33 @@ class CovidService
             ->orderBy('tanggal', 'desc')
             ->paginate($perPage);
     }
+
+    /**
+     * Get historical data for a specific wilayah.
+     */
+    public function getHistory(
+        string $wilayah = 'Indonesia',
+        int $days = 30,
+        ?string $startDate = null,
+        ?string $endDate = null
+    ): Collection {
+        $query = CovidData::whereRaw('LOWER(wilayah) = ?', [strtolower($wilayah)])
+            ->orderBy('tanggal', 'desc');
+
+        if ($startDate && $endDate) {
+            $query->whereBetween('tanggal', [$startDate, $endDate]);
+        } else {
+            if ($days > 0) {
+                $query->limit($days);
+            }
+        }
+
+        return $query->get([
+            'tanggal',
+            'wilayah',
+            'positif',
+            'sembuh',
+            'meninggal',
+        ]);
+    }
 }
