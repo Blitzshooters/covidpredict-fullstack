@@ -8,107 +8,210 @@ use Carbon\Carbon;
 
 class SESService
 {
-    private float $alpha = 0.9;
+    public function calculatePrediction(
+        int $periode,
+        string $wilayah = 'Indonesia',
+        float $alpha = 0.7
+    ): array {
+        $historicalData = CovidData::whereRaw('LOWER(wilayah) = ?', [strtolower($wilayah)])
+            ->orderBy('tanggal', 'desc')
+            ->limit(30)
+            ->get()
+            ->reverse()
+            ->values();
 
-    /**
-     * Calculate prediction using Single Exponential Smoothing
-     * 
-     * @param int $periode Number of days to predict into the future
-     * @param string $wilayah Region to predict for
-     * @return array
-     */
-    public function calculatePrediction(int $periode, string $wilayah = 'Indonesia'): array
-    {
-        // Get historical data ordered by oldest to newest for calculation
-        $historicalData = CovidData::where('wilayah', $wilayah)
-            ->orderBy('tanggal', 'asc')
-            ->get();
-
-        if ($historicalData->isEmpty()) {
+        if ($historicalData->count() < 3) {
             return [
-                'positif' => 0,
-                'sembuh' => 0,
-                'meninggal' => 0
+                'success' => false,
+                'message' => 'Data historis tidak cukup untuk melakukan prediksi',
+                'data' => null,
             ];
         }
 
-        // Apply SES on the data series
-        $predictedPositif = $this->calculateSES($historicalData->pluck('positif')->toArray());
-        $predictedSembuh = $this->calculateSES($historicalData->pluck('sembuh')->toArray());
-        $predictedMeninggal = $this->calculateSES($historicalData->pluck('meninggal')->toArray());
+        $dailyPositiveCases = $this->getDailyDifferences(
+            $historicalData->pluck('positif')->toArray()
+        );
 
-        // For SES, the forecast for future periods is flat (Ft+k = Ft+1).
-        // However, if we apply it to daily changes (which is better for cumulative), 
-        // we'd multiply by period. But to strictly follow simple SES on the given data:
-        // We will just use the SES formula result directly.
-        // Wait, if we just use the SES result on cumulative data, it will be lower than the current.
-        // Let's use a slightly modified approach: apply SES to daily differences, then add to the last cumulative value.
-        
-        $dailyPositif = $this->getDailyDifferences($historicalData->pluck('positif')->toArray());
-        $dailySembuh = $this->getDailyDifferences($historicalData->pluck('sembuh')->toArray());
-        $dailyMeninggal = $this->getDailyDifferences($historicalData->pluck('meninggal')->toArray());
+        $dailyRecoveredCases = $this->getDailyDifferences(
+            $historicalData->pluck('sembuh')->toArray()
+        );
 
-        $sesDailyPositif = $this->calculateSES($dailyPositif);
-        $sesDailySembuh = $this->calculateSES($dailySembuh);
-        $sesDailyMeninggal = $this->calculateSES($dailyMeninggal);
+        $dailyDeathCases = $this->getDailyDifferences(
+            $historicalData->pluck('meninggal')->toArray()
+        );
+
+        if (count($dailyPositiveCases) < 2) {
+            return [
+                'success' => false,
+                'message' => 'Data kasus harian tidak cukup untuk prediksi',
+                'data' => null,
+            ];
+        }
+
+        $positiveSesResult = $this->calculateSESWithErrors($dailyPositiveCases, $alpha);
+        $recoveredSesResult = $this->calculateSESWithErrors($dailyRecoveredCases, $alpha);
+        $deathSesResult = $this->calculateSESWithErrors($dailyDeathCases, $alpha);
+
+        $forecastDaily = max(0, (int) round($positiveSesResult['forecast']));
+        $forecastRecoveredDaily = max(0, (int) round($recoveredSesResult['forecast']));
+        $forecastDeathDaily = max(0, (int) round($deathSesResult['forecast']));
+
+        $errors = $positiveSesResult['errors'];
 
         $lastRecord = $historicalData->last();
 
-        $finalPositif = $lastRecord->positif + ($sesDailyPositif * $periode);
-        $finalSembuh = $lastRecord->sembuh + ($sesDailySembuh * $periode);
-        $finalMeninggal = $lastRecord->meninggal + ($sesDailyMeninggal * $periode);
+        $lastCumulative = (int) $lastRecord->positif;
+        $lastRecovered = (int) $lastRecord->sembuh;
+        $lastDeaths = (int) $lastRecord->meninggal;
 
-        $result = [
-            'positif' => (int) round($finalPositif),
-            'sembuh' => (int) round($finalSembuh),
-            'meninggal' => (int) round($finalMeninggal),
-        ];
+        $estimatedCases = $lastCumulative + ($forecastDaily * $periode);
+        $estimatedRecovered = $lastRecovered + ($forecastRecoveredDaily * $periode);
+        $estimatedDeaths = $lastDeaths + ($forecastDeathDaily * $periode);
 
-        // Save prediction to database
-        Prediction::create([
-            'tanggal_prediksi' => Carbon::parse($lastRecord->tanggal)->addDays($periode)->format('Y-m-d'),
+        $mae = count($errors) > 0
+            ? array_sum($errors) / count($errors)
+            : 0.0;
+
+        $avgErrorPercent = $forecastDaily > 0
+            ? ($mae / $forecastDaily) * 100
+            : 0.0;
+
+        $confidenceInterval = max(0, min(100, 100 - $avgErrorPercent));
+
+        $lastDailyCase = end($dailyPositiveCases);
+
+        $trendPercentage = $lastDailyCase > 0
+            ? (($forecastDaily - $lastDailyCase) / $lastDailyCase) * 100
+            : 0.0;
+
+        $trendStatus = $trendPercentage >= 0
+            ? 'Kenaikan'
+            : 'Penurunan';
+
+        \Log::info('Debug hasil prediksi SES', [
+            'wilayah' => $wilayah,
             'periode' => $periode,
-            'hasil_prediksi_positif' => $result['positif'],
-            'hasil_prediksi_sembuh' => $result['sembuh'],
-            'hasil_prediksi_meninggal' => $result['meninggal'],
+            'alpha' => $alpha,
+
+            'last_positif' => $lastCumulative,
+            'forecast_daily_positif' => $forecastDaily,
+            'estimated_positif' => $estimatedCases,
+
+            'last_sembuh' => $lastRecovered,
+            'forecast_daily_sembuh' => $forecastRecoveredDaily,
+            'estimated_sembuh' => $estimatedRecovered,
+
+            'last_meninggal' => $lastDeaths,
+            'forecast_daily_meninggal' => $forecastDeathDaily,
+            'estimated_meninggal' => $estimatedDeaths,
+
+            'last_daily_case' => $lastDailyCase,
+            'trend_percentage' => $trendPercentage,
+            'avg_error_percent' => $avgErrorPercent,
+            'confidence_interval' => $confidenceInterval,
         ]);
 
-        return $result;
+        $predictionDate = Carbon::parse($lastRecord->tanggal)
+            ->addDays($periode)
+            ->format('Y-m-d');
+
+        \Log::info('Debug tanggal prediksi', [
+            'last_record_tanggal' => $lastRecord->tanggal,
+            'periode' => $periode,
+            'prediction_date' => $predictionDate,
+        ]);
+
+        $this->savePrediction(
+            predictionDate: $predictionDate,
+            periode: $periode,
+            estimatedCases: $estimatedCases,
+            estimatedRecovered: $estimatedRecovered,
+            estimatedDeaths: $estimatedDeaths
+        );
+
+        return [
+            'success' => true,
+            'message' => 'Prediksi berhasil',
+            'data' => [
+                'wilayah' => $wilayah,
+                'prediction_days' => $periode,
+                'alpha' => $alpha,
+
+                'estimated_cases' => $estimatedCases,
+                'forecast_daily_cases' => $forecastDaily,
+                'last_daily_cases' => $lastDailyCase,
+
+                'trend_status' => $trendStatus,
+                'trend_percentage' => round($trendPercentage, 1),
+
+                'confidence_interval' => round($confidenceInterval, 1),
+                'avg_error' => round($avgErrorPercent, 2),
+            ],
+        ];
     }
 
-    /**
-     * Helper to get daily differences from cumulative array
-     */
     private function getDailyDifferences(array $cumulative): array
     {
         $daily = [];
-        if (empty($cumulative)) return $daily;
-        
-        $daily[] = $cumulative[0]; // first day is itself
-        for ($i = 1; $i < count($cumulative); $i++) {
-            $diff = $cumulative[$i] - $cumulative[$i - 1];
-            $daily[] = $diff > 0 ? $diff : 0; // ensure no negative daily cases if data is anomalous
+
+        if (count($cumulative) < 2) {
+            return $daily;
         }
+
+        for ($i = 1; $i < count($cumulative); $i++) {
+            $previous = (int) $cumulative[$i - 1];
+            $current = (int) $cumulative[$i];
+
+            $daily[] = max(0, $current - $previous);
+        }
+
         return $daily;
     }
 
-    /**
-     * Core SES algorithm calculation
-     * Formula: Ft+1 = alpha * Yt + (1 - alpha) * Ft
-     */
-    private function calculateSES(array $data): float
+    private function calculateSESWithErrors(array $data, float $alpha): array
     {
-        if (empty($data)) return 0.0;
-
-        // F1 = Y1 (Initialization)
-        $forecast = $data[0];
-
-        // Calculate up to the end of the series
-        for ($i = 1; $i < count($data); $i++) {
-            $forecast = ($this->alpha * $data[$i]) + ((1 - $this->alpha) * $forecast);
+        if (empty($data)) {
+            return [
+                'forecast' => 0.0,
+                'errors' => [],
+            ];
         }
 
-        // The forecast variable now holds F_t+1 (the prediction for the next period)
-        return $forecast;
+        $level = $data[0];
+        $errors = [];
+
+        for ($i = 1; $i < count($data); $i++) {
+            $forecast = $level;
+            $actual = $data[$i];
+
+            $errors[] = abs($actual - $forecast);
+
+            $level = ($alpha * $actual) + ((1 - $alpha) * $level);
+        }
+
+        return [
+            'forecast' => $level,
+            'errors' => $errors,
+        ];
+    }
+
+    private function savePrediction(
+        string $predictionDate,
+        int $periode,
+        int $estimatedCases,
+        int $estimatedRecovered,
+        int $estimatedDeaths
+    ): void {
+        try {
+            Prediction::create([
+                'tanggal_prediksi' => $predictionDate,
+                'periode' => $periode,
+                'hasil_prediksi_positif' => $estimatedCases,
+                'hasil_prediksi_sembuh' => $estimatedRecovered,
+                'hasil_prediksi_meninggal' => $estimatedDeaths,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('Gagal simpan prediksi: ' . $e->getMessage());
+        }
     }
 }
