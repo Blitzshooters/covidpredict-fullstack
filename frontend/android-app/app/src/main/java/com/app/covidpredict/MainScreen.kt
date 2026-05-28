@@ -63,7 +63,7 @@ fun MainScreen() {
         NavHost(
             navController = navController,
             startDestination = "dashboard",
-            modifier = Modifier
+            modifier = Modifier.Companion
                 .padding(padding)
                 .fillMaxSize()
         ) {
