@@ -1,5 +1,10 @@
 package com.app.covidpredict.ui.screen
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -21,15 +26,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.app.covidpredict.R
+import com.app.covidpredict.data.model.Article
 import com.app.covidpredict.theme.CovidPredictTheme
 import com.app.covidpredict.viewmodels.DashboardViewModel
 import com.app.covidpredict.viewmodels.SharedViewModel
@@ -49,6 +57,28 @@ fun DashboardScreen(
     val selectedLocation by sharedViewModel.selectedLocation.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Use remember to avoid recreating the list on every recomposition
+    val relatedArticles = remember {
+        listOf(
+            Article(
+                title = "Memahami Dampak Pergeseran Musiman terhadap Penyebaran Virus",
+                category = "KESEHATAN PUBLIK",
+                readTime = "5 menit baca",
+                description = "Studi terbaru menunjukkan bahwa perubahan musim dan faktor lingkungan dapat memengaruhi pola penyebaran virus pernapasan.",
+                imageRes = R.drawable.artikel1,
+                url = "https://pmc.ncbi.nlm.nih.gov/articles/PMC10363434/"
+            ),
+            Article(
+                title = "Kenali Gejala dan Cara Pencegahan COVID-19",
+                category = "COVID-19",
+                readTime = "4 menit baca",
+                description = "Kenali gejala umum seperti demam, batuk, sakit tenggorokan, serta cara perlindungan seperti memakai masker dan mencuci tangan.",
+                imageRes = R.drawable.artikel2,
+                url = "https://www.who.int/health-topics/coronavirus"
+            )
+        )
+    }
+
     // Re-fetch data when location changes
     LaunchedEffect(selectedLocation) {
         viewModel.fetchDashboardData(sharedViewModel.getApiLocation())
@@ -62,7 +92,7 @@ fun DashboardScreen(
 
     val pullToRefreshState = rememberPullToRefreshState()
     if (pullToRefreshState.isRefreshing) {
-        LaunchedEffect(true) {
+        LaunchedEffect(pullToRefreshState.isRefreshing) {
             viewModel.refreshData(sharedViewModel.getApiLocation())
         }
     }
@@ -79,7 +109,7 @@ fun DashboardScreen(
         if (!uiState.isLoading) {
             for (i in 1..7) {
                 visibleItems = i
-                delay(100)
+                delay(300)
             }
         }
     }
@@ -101,7 +131,7 @@ fun DashboardScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            item {
+            item(key = "location") {
                 AnimatedVisibility(
                     visible = visibleItems >= 1,
                     enter = fadeIn() + slideInVertically { it / 2 }
@@ -115,7 +145,7 @@ fun DashboardScreen(
                 }
             }
 
-            item {
+            item(key = "confirmed") {
                 AnimatedVisibility(
                     visible = visibleItems >= 2,
                     enter = fadeIn() + slideInVertically { it / 2 }
@@ -129,7 +159,7 @@ fun DashboardScreen(
                 }
             }
 
-            item {
+            item(key = "stats") {
                 AnimatedVisibility(
                     visible = visibleItems >= 3,
                     enter = fadeIn() + slideInVertically { it / 2 }
@@ -159,7 +189,7 @@ fun DashboardScreen(
                 }
             }
 
-            item {
+            item(key = "shortcuts") {
                 AnimatedVisibility(
                     visible = visibleItems >= 4,
                     enter = fadeIn() + slideInVertically { it / 2 }
@@ -173,7 +203,7 @@ fun DashboardScreen(
                 }
             }
 
-            item {
+            item(key = "prediction") {
                 AnimatedVisibility(
                     visible = visibleItems >= 5,
                     enter = fadeIn() + slideInVertically { it / 2 }
@@ -185,12 +215,18 @@ fun DashboardScreen(
                 }
             }
 
-            item {
+            item(key = "articles") {
                 AnimatedVisibility(
                     visible = visibleItems >= 6,
                     enter = fadeIn() + slideInVertically { it / 2 }
                 ) {
-                    ArticleCard()
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        relatedArticles.forEach { article ->
+                            ArticleCard(article = article)
+                        }
+                    }
                 }
             }
 
@@ -221,23 +257,33 @@ fun AnimatedNumber(
     style: TextStyle,
     color: Color
 ) {
-    // Hilangkan karakter non-digit kecuali tanda plus/minus di depan
-    val numericString = value.filter { it.isDigit() }
-    val targetValue = numericString.toLongOrNull() ?: 0L
+    val targetValue = remember(value) {
+        value
+            .replace(".", "")
+            .replace(",", "")
+            .replace("Hari Ini", "")
+            .trim()
+            .toLongOrNull() ?: 0L
+    }
 
     val animatedValue = remember { Animatable(0f) }
 
-    LaunchedEffect(value) {
+    LaunchedEffect(targetValue) {
         animatedValue.animateTo(
             targetValue.toFloat(),
             animationSpec = tween(durationMillis = 1200)
         )
     }
 
-    val formattedValue = NumberFormat.getInstance(Locale("id", "ID")).format(animatedValue.value.toLong())
+    val formatter = remember { NumberFormat.getInstance(Locale("id", "ID")) }
+
+    val displayText = remember(animatedValue.value, prefix, suffix) {
+        val formatted = formatter.format(kotlin.math.abs(animatedValue.value.toLong()))
+        "$prefix$formatted$suffix"
+    }
 
     Text(
-        text = "$prefix$formattedValue$suffix",
+        text = displayText,
         style = style,
         color = color,
         fontWeight = FontWeight.ExtraBold
@@ -393,7 +439,7 @@ fun ConfirmedCard(
                 Text(
                     "Kasus Terkonfirmasi",
                     style = MaterialTheme.typography.labelLarge,
-                    color = Color.Gray,
+                    color = Color.Black,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -421,7 +467,7 @@ fun ConfirmedCard(
 
                     AnimatedNumber(
                         value = todayIncrease,
-                        prefix = if (rawTodayIncrease >= 0) "+" else "",
+                        prefix = if (rawTodayIncrease >= 0) "+" else "-",
                         suffix = " Hari Ini",
                         style = MaterialTheme.typography.labelMedium,
                         color = trendColor
@@ -522,22 +568,12 @@ fun TrendCard(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1f,
+        targetValue = if (isPressed) 0.94f else 1f,
         label = "scale"
     )
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onNavigateToPrediction
-            ),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFCBE6F7)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -589,7 +625,15 @@ fun TrendCard(
             Surface(
                 modifier = Modifier
                     .size(56.dp)
-                    .clickable { onNavigateToPrediction() },
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onNavigateToPrediction
+                    ),
                 shape = RoundedCornerShape(12.dp),
                 color = Color.White
             ) {
@@ -711,23 +755,58 @@ fun PredictionCard(
     }
 }
 
+fun openArticleInBrowser(context: Context, url: String) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+
+    try {
+        context.startActivity(intent)
+    } catch (e: ActivityNotFoundException) {
+        Toast.makeText(
+            context,
+            "Tidak ada browser untuk membuka artikel",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+}
+
 @Composable
-fun ArticleCard() {
+fun ArticleCard(article: Article) {
+    val context = LocalContext.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
+        label = "articleScale"
+    )
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                openArticleInBrowser(context, article.url)
+            },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column {
             AsyncImage(
-                model = R.drawable.artikel1,
-                contentDescription = null,
+                model = article.imageRes,
+                contentDescription = article.title,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(200.dp),
                 contentScale = ContentScale.Crop
             )
+
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
@@ -735,33 +814,43 @@ fun ArticleCard() {
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
-                            text = "KESEHATAN PUBLIK",
+                            text = article.category,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color(0xFF126D27),
                             fontWeight = FontWeight.ExtraBold
                         )
                     }
+
                     Spacer(modifier = Modifier.width(12.dp))
+
                     Text(
-                        text = "5 menit baca",
+                        text = article.readTime,
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.Gray
                     )
                 }
+
                 Spacer(modifier = Modifier.height(12.dp))
+
                 Text(
-                    text = "Memahami Dampak Pergeseran Musiman terhadap Penyebaran Virus",
+                    text = article.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF021F29)
+                    color = Color(0xFF021F29),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
+
                 Spacer(modifier = Modifier.height(8.dp))
+
                 Text(
-                    text = "Studi terbaru menunjukkan bahwa faktor lingkungan terus memainkan peran halus namun...",
+                    text = article.description,
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.Gray,
-                    lineHeight = 18.sp
+                    lineHeight = 18.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

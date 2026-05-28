@@ -2,13 +2,14 @@ package com.app.covidpredict.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.app.covidpredict.data.repository.PredictionRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
 import java.util.Locale
-import kotlin.math.abs
 
 data class PrediksiUiState(
     val selectedRegion: String = "Nasional",
@@ -26,22 +27,37 @@ data class PrediksiUiState(
     val predictionDays: String = "14",
     val alpha: Float = 0.7f,
     val estimatedCases: String = "-",
+    val forecastDailyCases: String = "-",
     val trendStatus: String = "Menunggu perhitungan...",
+    val trendDescription: String = "Menunggu perhitungan...",
     val confidenceInterval: String = "-",
     val avgError: String = "-",
     val isLoading: Boolean = false,
-    val isError: Boolean = false
+    val isError: Boolean = false,
+    val errorMessage: String? = null
 )
 
-class PrediksiViewModel : ViewModel() {
+class PrediksiViewModel(
+    private val repository: PredictionRepository = PredictionRepository()
+) : ViewModel() {
+
     private val _uiState = MutableStateFlow(PrediksiUiState())
     val uiState: StateFlow<PrediksiUiState> = _uiState.asStateFlow()
 
-    // Mock dataset untuk simulasi (Kasus harian 10 hari terakhir)
-    private val mockTimeSeriesData = listOf(1200.0, 1150.0, 1300.0, 1250.0, 1400.0, 1350.0, 1500.0, 1450.0, 1600.0, 1550.0)
+    // Optimization: Cache expensive formatters to avoid re-creation in data updates
+    private val idLocale = Locale("id", "ID")
+    private val idNumberFormat = NumberFormat.getNumberInstance(idLocale)
 
     fun onAlphaChange(newAlpha: Float) {
-        _uiState.value = _uiState.value.copy(alpha = newAlpha)
+        _uiState.value = _uiState.value.copy(
+            alpha = newAlpha.coerceIn(0.1f, 1.0f),
+            isError = false,
+            errorMessage = null
+        )
+    }
+
+    fun resetPrediction() {
+        _uiState.value = PrediksiUiState()
     }
 
     fun onRegionChange(region: String) {
@@ -49,56 +65,111 @@ class PrediksiViewModel : ViewModel() {
     }
 
     fun onDaysChange(days: String) {
-        // Hanya izinkan angka
-        if (days.all { it.isDigit() } || days.isEmpty()) {
-            _uiState.value = _uiState.value.copy(predictionDays = days)
+        val cleanValue = days.trim()
+
+        // Hanya izinkan angka atau kosong
+        if (cleanValue.all { it.isDigit() } || cleanValue.isEmpty()) {
+
+            val hasLeadingZero = cleanValue.length > 1 && cleanValue.startsWith("0")
+            val number = cleanValue.toIntOrNull()
+            val isInvalid = cleanValue.isNotEmpty() &&
+                    (hasLeadingZero || number == null || number !in 1..30)
+
+            _uiState.value = _uiState.value.copy(
+                predictionDays = cleanValue,
+                isError = isInvalid,
+                errorMessage = if (isInvalid) {
+                    "Masukkan angka 1-30 tanpa awalan 0"
+                } else {
+                    null
+                }
+            )
         }
     }
 
     fun calculatePrediction() {
-        val daysInput = _uiState.value.predictionDays.toIntOrNull() ?: 0
+        val state = _uiState.value
+        val input = state.predictionDays.trim()
 
-        // Validasi 1-30 hari
-        if (daysInput !in 1..30) {
-            _uiState.value = _uiState.value.copy(isError = true)
+        val hasLeadingZero = input.length > 1 && input.startsWith("0")
+        val daysInput = input.toIntOrNull()
+
+        if (
+            input.isEmpty() ||
+            hasLeadingZero ||
+            daysInput == null ||
+            daysInput !in 1..30
+        ) {
+            _uiState.value = state.copy(
+                isError = true,
+                errorMessage = "Masukkan angka 1-30 tanpa awalan 0"
+            )
             return
         }
 
+        val apiRegion = if (state.selectedRegion == "Nasional") {
+            "Indonesia"
+        } else {
+            state.selectedRegion
+        }
+
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, isError = false)
-
-            // Simulasi loading/kalkulasi
-            delay(1500)
-
-            val alpha = _uiState.value.alpha
-            val data = mockTimeSeriesData
-
-            // Logika Single Exponential Smoothing (SES)
-            // S_t = alpha * Y_t + (1 - alpha) * S_{t-1}
-            var level = data[0]
-            val errors = mutableListOf<Double>()
-
-            for (i in 1 until data.size) {
-                val forecast = level
-                val actual = data[i]
-                errors.add(abs(actual - forecast))
-                level = alpha * actual + (1 - alpha) * level
-            }
-
-            // Hasil peramalan SES adalah nilai 'level' terakhir
-            val forecastResult = level.toInt()
-            val mae = if (errors.isNotEmpty()) errors.average() else 0.0
-
-            // Mock Confidence Interval berdasarkan MAE
-            val ciValue = 100 - (mae / forecastResult * 100).coerceIn(0.0, 10.0)
-
             _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                estimatedCases = String.format(Locale.getDefault(), "%,d", forecastResult),
-                avgError = String.format(Locale.getDefault(), "%.2f%%", (mae / forecastResult * 100)),
-                confidenceInterval = String.format(Locale.getDefault(), "%.1f%%", ciValue),
-                trendStatus = if (forecastResult > data.last()) "Potensi Kenaikan" else "Potensi Penurunan"
+                isLoading = true,
+                isError = false,
+                errorMessage = null
             )
+
+            delay(1000)
+
+            try {
+                val response = repository.predict(
+                    wilayah = apiRegion,
+                    days = daysInput,
+                    alpha = state.alpha.toDouble()
+                )
+
+                val result = response.data
+
+                val trendDirection = if (result.trendPercentage >= 0) {
+                    "kenaikan"
+                } else {
+                    "penurunan"
+                }
+
+                val trendDescription = String.format(
+                    idLocale,
+                    "%.1f%% %s dari tren saat ini",
+                    kotlin.math.abs(result.trendPercentage),
+                    trendDirection
+                )
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    isError = false,
+                    estimatedCases = idNumberFormat.format(result.estimatedCases),
+                    forecastDailyCases = idNumberFormat.format(result.forecastDailyCases),
+                    trendStatus = result.trendStatus,
+                    trendDescription = trendDescription,
+                    confidenceInterval = String.format(
+                        idLocale,
+                        "%.1f%%",
+                        result.confidenceInterval
+                    ),
+                    avgError = String.format(
+                        idLocale,
+                        "%.2f%%",
+                        result.avgError
+                    ),
+                    errorMessage = null
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    isError = true,
+                    errorMessage = e.message ?: "Gagal menghitung prediksi"
+                )
+            }
         }
     }
 }
