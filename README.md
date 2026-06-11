@@ -4,9 +4,15 @@ Aplikasi prediksi perkembangan COVID-19 berbasis Android menggunakan metode Sing
 
 ## Struktur Project
 
-* backend-laravel → REST API (Laravel)
-* android-app → Aplikasi Android (Kotlin)
-* docs → Dokumentasi project
+* [Backend (Laravel)](file:///c:/Zam%20Zam/Pelajaran/Semester%206/Software%20Development/Final%20Project/Covid%20Predict/covidpredict-fullstack/backend/laravel-app) → REST API
+* [Frontend (Android)](file:///c:/Zam%20Zam/Pelajaran/Semester%206/Software%20Development/Final%20Project/Covid%20Predict/covidpredict-fullstack/frontend/android-app) → Aplikasi Kotlin
+* [Docs](file:///c:/Zam%20Zam/Pelajaran/Semester%206/Software%20Development/Final%20Project/Covid%20Predict/covidpredict-fullstack/docs) → Dokumentasi Lengkap
+    * [Instalasi](file:///c:/Zam%20Zam/Pelajaran/Semester%206/Software%20Development/Final%20Project/Covid%20Predict/covidpredict-fullstack/docs/installation.md)
+    * [Skema Database](file:///c:/Zam%20Zam/Pelajaran/Semester%206/Software%20Development/Final%20Project/Covid%20Predict/covidpredict-fullstack/docs/database-schema.md)
+    * [Panduan Pengguna](file:///c:/Zam%20Zam/Pelajaran/Semester%206/Software%20Development/Final%20Project/Covid%20Predict/covidpredict-fullstack/docs/user-guide.md)
+    * [Kontribusi](file:///c:/Zam%20Zam/Pelajaran/Semester%206/Software%20Development/Final%20Project/Covid%20Predict/covidpredict-fullstack/docs/contribution.md)
+    * [Spesifikasi API](file:///c:/Zam%20Zam/Pelajaran/Semester%206/Software%20Development/Final%20Project/Covid%20Predict/covidpredict-fullstack/docs/api-specs.md)
+    * [Arsitektur Sistem](file:///c:/Zam%20Zam/Pelajaran/Semester%206/Software%20Development/Final%20Project/Covid%20Predict/covidpredict-fullstack/docs/architecture.md)
 
 ## Tech Stack
 
